@@ -5,6 +5,7 @@ no warnings 'uninitialized';
 use base qw( Class::Accessor::Chained::Fast );
 __PACKAGE__->mk_accessors(qw( preserve_params ));
 our $VERSION = '0.08';
+use Text::ParseWords qw(parse_line);
 
 =head1 NAME
 
@@ -46,52 +47,6 @@ sub parse {
     return $self->parse_lines( <$fh> );
 }
 
-# like Text::ParseWords' parse_line, only C-style so the regex engine doesn't
-# blow its stack, and it's also got a $limit like split
-
-# this only took a trainride, so I'm pretty sure there are lurking
-# corner cases - when I get a tuit I'll take the Text::ParseWords
-# tests and run them through it
-
-sub parse_line {
-    my ($delim, $keep, $text, $limit) = @_;
-
-    my ($current, @parts);
-    my ($quote, $escaped);
-    while (length $text) {
-        if ($text =~ s{^(\\)}{}) {
-            $current .= $1 if $escaped || $keep;
-            $escaped = !$escaped;
-            next;
-        }
-        if (!$quote && !$escaped && $text =~ s{^$delim}{}) {
-            push @parts, $current;
-            $current = undef;
-            if (defined $limit && @parts == $limit -1) {
-                return @parts, $text;
-            }
-        }
-        else {
-            # pull the character off to take a looksee
-            $text =~ s{(.)}{};
-            my $char = $1;
-            if ($char eq '"' && !$escaped) {
-                # either it's defined and matches, in which case we
-                # clear the quote variable, or it's undefined which
-                # makes this quote an opening quote
-                $quote = !$quote;
-                $current .= $char if $keep;
-            }
-            else {
-                $current .= $char;
-            }
-        }
-        $escaped = 0;
-    }
-
-    return @parts, $current;
-}
-
 sub parse_lines {
     my $self = shift;
 
@@ -115,9 +70,8 @@ sub parse_lines {
             next;
         }
 
-        # we'd use Text::ParseWords here, but it likes to segfault.
-        my ($name, $value) = parse_line( ':', 1, $_, 2);
-        $value = '' unless defined $value;
+        my ($name, @rest) = parse_line( ':', 1, $_);
+        my $value = join(':', @rest);
         my @params = parse_line( ';', 0, $name );
         $name = shift @params;
 
